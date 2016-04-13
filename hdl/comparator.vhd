@@ -10,7 +10,6 @@ entity comparator is
 end entity comparator;
 
 architecture rtl of comparator is
-
 begin
   solution <= '1' when (unsigned(val_a) > unsigned(val_b)) else '0';
 end architecture rtl;

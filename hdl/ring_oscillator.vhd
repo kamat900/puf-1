@@ -1,8 +1,6 @@
 library IEEE;
 use IEEE.std_logic_1164.all ;
-use IEEE.std_logic_arith.all;
-use IEEE.std_logic_unsigned.all;
---use IEEE.numeric_std.all ;
+use IEEE.numeric_std.all ;
 
 entity ring_oscillator is
   generic (
@@ -20,13 +18,13 @@ architecture rtl of ring_oscillator is
   attribute syn_keep : boolean;
   attribute syn_keep of chain : signal is true;
 begin
-  LOGIC_CHAIN: for i in 1 to CHAIN_WIDTH
+  U0_GEN_OSC_CHAIN: for i in 1 to CHAIN_WIDTH
   generate
     chain(i) <= chain(i - 1) ;
   end generate;
   chain(0) <= not chain(CHAIN_WIDTH) or (not rst_n) ;
 
-  T_FF: process (rst_n, chain(0))
+  U1_PROC_TFF: process (rst_n, chain(0))
   begin
     if rst_n = '0' then
       s_output <= '0';
