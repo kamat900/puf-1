@@ -35,6 +35,49 @@ pepExtractor.prj
 impact.xsl
 impact_impact.xwbt
 
+!*.vhd
+!*.v
+!*.tcl
+!*.sdc
+!*.pin
+!*.sof
+!*.pof
+
+# ignore Quartus II generated files
+*sopc_*
+*.jdi
+*.ptf.*
+*.sof
+*.pof
+*.qws
+*.smsg
+*_inst.vhd
+*_generation_script*
+*.done
+*.txt
+*.qarlog
+*.rpt
+*.summary
+*.qws
+*.cmp
+*.eqn
+*.html
+*.jpg
+*.bak
+*.qar
+*.sopc_builder
+*example*
+*~
+*.mif
+*.hex
+
+# ignore Quartus II generated folders
+db/
+incremental_db/
+simulation/
+timing/
+*_sim/
+
 #ignore OS noise
 
 Thumbs.db
