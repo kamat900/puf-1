@@ -5,7 +5,7 @@ use IEEE.numeric_std.all;
 entity puf is
   generic (
     INPUT_WIDTH    : integer := 1024;
-    PUTPUT_WIDTH   : integer := 32;
+    OUTPUT_WIDTH   : integer := 32;
     RING_OSC_DEPTH : integer := 20);
   port (
     clk             : in  std_logic;
@@ -29,13 +29,15 @@ architecture rtl of puf is
       CHAIN_WIDTH : positive);
     port (
       rstn   : in  std_logic;
-      output : out std_logic);
+      output : out std_logic_vector(0 downto 0));
   end component ring_oscillator;
   component comparator is
+    generic (
+      WIDTH : integer);
     port (
-      val_a    : in  std_logic;
-      val_b    : in  std_logic;
-      solution : out std_logic);
+      val_a    : in  std_logic_vector(WIDTH-1 downto 0);
+      val_b    : in  std_logic_vector(WIDTH-1 downto 0);
+      solution : out std_logic_vector(0 downto 0));
   end component comparator;
   component counter is
     generic (
@@ -48,24 +50,25 @@ architecture rtl of puf is
   end component counter;
   component mux is
     port (
-      in0  : in  std_logic;
-      in1  : in  std_logic;
-      sel  : in  std_logic;
-      out0 : out std_logic);
+      in0  : in  std_logic_vector(0 downto 0);
+      in1  : in  std_logic_vector(0 downto 0);
+      sel  : in  std_logic_vector(0 downto 0);
+      out0 : out std_logic_vector(0 downto 0));
   end component mux;
   signal osc_output    : std_logic_vector(OSC_NUM-1 downto 0);
-  signal count         : std_logic_vector(COUNTER_NUM-1 downto 0);
   signal solution      : std_logic_vector(COMPARATOR_NUM-1 downto 0);
   signal mux_lvl_1_out : std_logic_vector(MUX_LVL_1_NUM-1 downto 0);
   signal mux_lvl_2_out : std_logic_vector(MUX_LVL_2_NUM-1 downto 0);
   signal mux_lvl_3_out : std_logic_vector(MUX_LVL_3_NUM-1 downto 0);
   signal mux_lvl_4_out : std_logic_vector(MUX_LVL_4_NUM-1 downto 0);
+  type count_t is array (COUNTER_NUM-1 downto 0) of std_logic_vector(31 downto 0);
+  signal count         : count_t;
 begin
   U0_GEN_RING_OSC : for i in 0 to OSC_NUM
   generate
     U0_OSC : ring_oscillator
       generic map (
-        CHAIN_WIDTH => CHAIN_WIDTH)
+        CHAIN_WIDTH => RING_OSC_DEPTH)
       port map (
         rstn   => rstn,
         output => osc_output(i));
@@ -75,7 +78,7 @@ begin
   generate
     U1_COUNTER : counter
       generic map (
-        WIDTH => WIDTH)
+        WIDTH => 32)
       port map (
         clk   => osc_output(i),
         rstn  => rstn,
@@ -86,6 +89,8 @@ begin
   U2_GEN_COMPARATOR : for i in 0 to COMPARATOR_NUM
   generate
     U2_COMPARATOR : comparator
+      generic map (
+        WIDTH => 32)
       port map (
         val_a    => count(i*2),
         val_b    => count(i*2+1),
