@@ -12,10 +12,10 @@
 
 
 
-// $Id: //acds/rel/14.1/ip/merlin/altera_merlin_slave_translator/altera_merlin_slave_translator.sv#2 $
-// $Revision: #2 $
-// $Date: 2014/10/20 $
-// $Author: jyeap $
+// $Id: //acds/rel/15.0/ip/merlin/altera_merlin_slave_translator/altera_merlin_slave_translator.sv#1 $
+// $Revision: #1 $
+// $Date: 2015/02/08 $
+// $Author: swbranch $
 
 // -------------------------------------
 // Merlin Slave Translator

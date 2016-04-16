@@ -11,9 +11,9 @@
 // agreement for further details.
 
 
-// $Id: //acds/rel/14.1/ip/merlin/altera_merlin_traffic_limiter/altera_merlin_traffic_limiter.sv#1 $
+// $Id: //acds/rel/15.0/ip/merlin/altera_merlin_traffic_limiter/altera_merlin_traffic_limiter.sv#1 $
 // $Revision: #1 $
-// $Date: 2014/10/06 $
+// $Date: 2015/02/08 $
 // $Author: swbranch $
 
 // -----------------------------------------------------
@@ -23,23 +23,28 @@
 // in order of request. Out-of-order responses can happen 
 // when a master does a non-posted transaction on a slave 
 // while responses are pending from a different slave.
-// Examples
-//  1) read to any latent slave, followed by a read to a 
-//   variable-latent slave
-//  2) read to any fixed-latency slave, followed by a read 
-//   to another fixed-latency slave whose fixed latency is smaller.
 //
-// For now, we'll backpressure to prevent a master from
-// switching slaves until all outstanding read responses have
-// returned. We also have to suppress the read, obviously.
+// Examples:
+//   1) read to any latent slave, followed by a read to a 
+//      variable-latent slave
+//   2) read to any fixed-latency slave, followed by a read 
+//      to another fixed-latency slave whose fixed latency is smaller.
+//   3) non-posted write to any latent slave, followed by a non-posted
+//      write or read to any variable-latent slave.
 //
-// Note: folding this into the router may give better fmax,
-// consider after profiling. If folding into router, break
-// into separate components: address router and destid router.
-// This only needs to be in the address router.
+// This component has two implementation modes that ensure
+// response order, controlled by the REORDER parameter.
+// 
+//   0) Backpressure to prevent a master from switching slaves 
+//   until all outstanding responses have returned. We also 
+//   have to suppress the non-posted transaction, obviously.
+//
+//   1) Reorder the responses as they return using a memory
+//   block.
 // -----------------------------------------------------
 
 `timescale 1 ns / 1 ns
+
 // altera message_off 10036
 module altera_merlin_traffic_limiter
 #(
@@ -49,40 +54,56 @@ module altera_merlin_traffic_limiter
       PKT_DEST_ID_L              = 0,
       PKT_SRC_ID_H               = 0,
       PKT_SRC_ID_L               = 0,
-      ST_DATA_W                  = 72,
-      ST_CHANNEL_W               = 32,
-      MAX_OUTSTANDING_RESPONSES  = 1,
-      PIPELINED                  = 0,
-      ENFORCE_ORDER              = 1,
       PKT_BYTE_CNT_H             = 0,
       PKT_BYTE_CNT_L             = 0,
       PKT_BYTEEN_H               = 0,
       PKT_BYTEEN_L               = 0,
       PKT_TRANS_WRITE            = 0,
       PKT_TRANS_READ             = 0,
+      ST_DATA_W                  = 72,
+      ST_CHANNEL_W               = 32,
+
+      MAX_OUTSTANDING_RESPONSES  = 1,
+      PIPELINED                  = 0,
+      ENFORCE_ORDER              = 1,
 
       // -------------------------------------
       // internal: allows optimization between this
       // component and the demux
       // -------------------------------------
       VALID_WIDTH                = 1,
+
       // -------------------------------------
-      // beta: prevents all RAW and WAR hazards by
-      // waiting for responses to return before issuing
-      // a command with different direction.
+      // Prevents all RAW and WAR hazards by waiting for 
+      // responses to return before issuing a command 
+      // with different direction.
       //
-      // this is intended for Avalon masters (the masters
-      // which do not require response, specifically) 
-      // connected to AXI slaves.
+      // This is intended for Avalon masters which are 
+      // connected to AXI slaves, because of the differing
+      // ordering models for the protocols.
       //
-      // expect this to be replaced with a less
-      // restrictive scheme in the future.
+      // If PREVENT_HAZARDS is 1, then the current implementation
+      // needs to know whether incoming writes will be posted or
+      // not at compile-time. Only one of SUPPORTS_POSTED_WRITES
+      // and SUPPORTS_NONPOSTED_WRITES can be 1.
+      //
+      // When PREVENT_HAZARDS is 0 there is no such restriction.
+      //
+      // It is possible to be less restrictive for memories.
       // -------------------------------------
       PREVENT_HAZARDS            = 0,
+
+      // -------------------------------------
+      // Used only when hazard prevention is on, but may be used
+      // for optimization work in the future.
+      // -------------------------------------
+      SUPPORTS_POSTED_WRITES     = 1,
+      SUPPORTS_NONPOSTED_WRITES  = 0,
+
       // -------------------------------------------------
-      // Reorder buffer: allow master to switch slaves
-      // while still have pending responses.
-      // Reponses will be reordered to command issued order
+      // Enables the reorder buffer which allows a master to 
+      // switch slaves while responses are pending.
+      // Reponses will be reordered following command issue order.
       // -------------------------------------------------
       REORDER                    = 0
 )
@@ -139,13 +160,12 @@ module altera_merlin_traffic_limiter
    localparam PKT_BYTE_CNT_W = PKT_BYTE_CNT_H - PKT_BYTE_CNT_L + 1;
    
    // -------------------------------------------------------
-   // Memory parameter
-   //
-   // Store whole packet includes sop, eop to memory
+   // Memory Parameters
    // ------------------------------------------------------
-   //localparam MAX_RESPONSE_CNT_W = log2ceil(MAX_OUTSTANDING_RESPONSES);
    localparam MAX_BYTE_CNT = 1 << (PKT_BYTE_CNT_W);
    localparam MAX_BURST_LENGTH = log2ceil(MAX_BYTE_CNT/NUMSYMBOLS);
+
+   // Memory stores packet width, including sop and eop
    localparam MEM_W = ST_DATA_W + ST_CHANNEL_W + 1 + 1;
    localparam MEM_DEPTH = MAX_OUTSTANDING_RESPONSES * (MAX_BYTE_CNT/NUMSYMBOLS);
    
@@ -268,6 +288,7 @@ module altera_merlin_traffic_limiter
    wire                    count_is_1;
    wire                    count_is_0;
    reg                     internal_valid;
+   wire [VALID_WIDTH-1:0]  wide_valid;
 
    assign { stage2_data, 
       stage2_channel,
@@ -288,9 +309,10 @@ module altera_merlin_traffic_limiter
    // -----------------------------------------------------------------------------
    // Use the sink's control signals here, because write responses may be dropped
    // when hazard prevention is on.
+   //
    // When case REORDER, move all side to rsp_source as all packets from rsp_sink will 
-   // go in the reprder memory
-   // One special case when PREVENT_HARD is on, need to use reorder_memory_valid
+   // go in the reorder memory.
+   // One special case when PREVENT_HAZARD is on, need to use reorder_memory_valid
    // as the rsp_source will drop
    // -----------------------------------------------------------------------------
    
@@ -330,7 +352,7 @@ module altera_merlin_traffic_limiter
       if (reset) begin
          pending_response_count <= 0;
          has_pending_responses <= 0;
-         count_max_reached         <= 0;
+         count_max_reached     <= 0;
       end
       else begin
          pending_response_count <= next_pending_response_count;
@@ -352,14 +374,14 @@ module altera_merlin_traffic_limiter
    generate
       if (REORDER) begin: fifo_dest_id_write_read_control_reorder_on
          wire [COUNTER_W - 1 : 0]    current_trans_seq_of_this_destid;
-         wire [MAX_DEST_ID - 1 : 0]         current_trans_seq_of_this_destid_valid;
-         wire [MAX_DEST_ID - 1 : 0]         responses_arrived;
-         reg [COUNTER_W - 1:0]     trans_sequence;
-         wire [MAX_DEST_ID - 1 : 0]         trans_sequence_we;
+         wire [MAX_DEST_ID - 1 : 0]  current_trans_seq_of_this_destid_valid;
+         wire [MAX_DEST_ID - 1 : 0]  responses_arrived;
+         reg [COUNTER_W - 1:0]       trans_sequence;
+         wire [MAX_DEST_ID - 1 : 0]  trans_sequence_we;
          
-         wire [COUNTER_W : 0]      trans_sequence_plus_trans_type;
-         wire                         current_trans_type_of_this_destid;
-         wire [COUNTER_W : 0]       current_trans_seq_of_this_destid_plus_trans_type [MAX_DEST_ID];
+         wire [COUNTER_W : 0]        trans_sequence_plus_trans_type;
+         wire                        current_trans_type_of_this_destid;
+         wire [COUNTER_W : 0]        current_trans_seq_of_this_destid_plus_trans_type [MAX_DEST_ID];
          // ------------------------------------------------------------
          // Control write trans_sequence to fifos
          //
@@ -390,7 +412,7 @@ module altera_merlin_traffic_limiter
          wire [COUNTER_W - 1: 0]    trans_sequence_rsp_this_destid_waiting;
          wire [COUNTER_W : 0]       sequence_and_trans_type_this_destid_waiting;
          wire                         trans_sequence_rsp_this_destid_waiting_valid;
-         assign trans_sequence_rsp_plus_trans_type    = current_trans_seq_of_this_destid_plus_trans_type[rsp_sink_dest_id];
+         assign trans_sequence_rsp_plus_trans_type = current_trans_seq_of_this_destid_plus_trans_type[rsp_sink_dest_id];
          assign trans_sequence_rsp                 = trans_sequence_rsp_plus_trans_type[COUNTER_W - 1: 0];
 
          // do I need to check if this fifo is valid, it should be always valid, unless a command not yet sent
@@ -398,7 +420,7 @@ module altera_merlin_traffic_limiter
          // It is worth to do an assertion but now to avoid QIS warning, just do as normal ST handshaking
          // check valid and ready
          
-         for (j = 0; j < MAX_DEST_ID; j = j +1) 
+         for (j = 0; j < MAX_DEST_ID; j = j+1) 
             begin : write_and_read_trans_sequence
                assign trans_sequence_we[j] = (cmd_dest_id == j) && nonposted_cmd_accepted;
                assign responses_arrived[j] = (rsp_sink_dest_id == j) && response_sink_accepted;
@@ -427,23 +449,19 @@ module altera_merlin_traffic_limiter
          //                   then it is correct order, else response store in memory and
          //                   send out to master later, when expect_trans_sequence match.
          // ------------------------------------------------------------------------------------
-         //   genvar i;
-         //   generate begin : trans_sequence_fifos
-         //if (REORDER ) begin : trans_sequence_fifos_when_reorder_on
-         //for (i = 0;i < MAX_DEST_ID; i = i+1) begin : trans_sequence_per_fifo
          for (j = 0;j < MAX_DEST_ID; j = j+1) begin : trans_sequence_per_fifo
             altera_avalon_sc_fifo 
                 #(
                   .SYMBOLS_PER_BEAT   (1),
                   .BITS_PER_SYMBOL    (COUNTER_W + 1), // one bit extra to store type of transaction
-                  .FIFO_DEPTH        (MAX_OUTSTANDING_RESPONSES),
+                  .FIFO_DEPTH         (MAX_OUTSTANDING_RESPONSES),
                   .CHANNEL_WIDTH      (0),
-                  .ERROR_WIDTH       (0),
-                  .USE_PACKETS       (0),
+                  .ERROR_WIDTH        (0),
+                  .USE_PACKETS        (0),
                   .USE_FILL_LEVEL     (0),
                   .EMPTY_LATENCY      (1),
-                  .USE_MEMORY_BLOCKS   (0),
-                  .USE_STORE_FORWARD   (0),
+                  .USE_MEMORY_BLOCKS  (0),
+                  .USE_STORE_FORWARD  (0),
                   .USE_ALMOST_FULL_IF (0),
                   .USE_ALMOST_EMPTY_IF (0)
                   ) dest_id_fifo 
@@ -501,7 +519,6 @@ module altera_merlin_traffic_limiter
          wire [ST_CHANNEL_W - 1 : 0]      reorder_mem_channel;
          wire                       reorder_mem_startofpacket;
          wire                       reorder_mem_endofpacket;
-         //wire                       reorder_mem_valid;
          wire                        reorder_mem_ready;
          // -------------------------------------------
          // Data to write and read from reorder memory
@@ -541,7 +558,6 @@ module altera_merlin_traffic_limiter
          assign sequence_and_trans_type_this_destid_waiting = current_trans_seq_of_this_destid_plus_trans_type[cmd_dest_id];
          assign current_trans_type_of_this_destid = sequence_and_trans_type_this_destid_waiting[COUNTER_W];
          assign trans_sequence_rsp_this_destid_waiting_valid = current_trans_seq_of_this_destid_valid[cmd_dest_id];
-         //assign suppress_prevent_harzard_for_particular_destid = (trans_sequence_rsp_this_destid_waiting == expect_trans_sequence) & (current_trans_type_of_this_destid != is_write)
          // it might waiting other sequence, check if different type of transaction as only for PREVENT HAZARD
          // if comming comamnd to one slave and this slave is still waiting for response from previous command
          // which has diiferent type of transaction, we back-pressure this command to avoid HAZARD
@@ -597,7 +613,7 @@ module altera_merlin_traffic_limiter
             if (PREVENT_HAZARDS == 1) begin
                cmd_src_data[PKT_TRANS_POSTED] = 1'b0;
                
-               if (rsp_src_data[PKT_TRANS_WRITE] == 1'b1) begin
+               if (rsp_src_data[PKT_TRANS_WRITE] == 1'b1 && SUPPORTS_POSTED_WRITES == 1 && SUPPORTS_NONPOSTED_WRITES == 0) begin
                   rsp_src_valid = 1'b0;
                   rsp_sink_ready = 1'b1;
                end
@@ -616,12 +632,11 @@ module altera_merlin_traffic_limiter
          cmd_src_channel         = stage2_channel;
          cmd_src_startofpacket   = stage2_startofpacket;
          cmd_src_endofpacket     = stage2_endofpacket;
-         // cmd_src_data            = stage2_data;
       end // always_comb
    
    // -------------------------------------
    // When there is no REORDER requirement
-   // Just pass thru signals
+   // Just pass through signals
    // -------------------------------------
    generate
       if (!REORDER) begin : use_selector_or_pass_thru_rsp
@@ -641,7 +656,7 @@ module altera_merlin_traffic_limiter
             if (PREVENT_HAZARDS == 1) begin
                cmd_src_data[PKT_TRANS_POSTED] = 1'b0;
 
-               if (rsp_sink_data[PKT_TRANS_WRITE] == 1'b1) begin
+               if (rsp_sink_data[PKT_TRANS_WRITE] == 1'b1 && SUPPORTS_POSTED_WRITES == 1 && SUPPORTS_NONPOSTED_WRITES == 0) begin
                   rsp_src_valid = 1'b0;
                   rsp_sink_ready = 1'b1;
                end
@@ -692,7 +707,7 @@ module altera_merlin_traffic_limiter
    endgenerate
    
    // ------------------------------------------
-   // Back pressure when max outstanding reached
+   // Backpressure when max outstanding transactions are reached
    // ------------------------------------------
    generate
       if (REORDER) begin : max_outstanding_block
@@ -703,6 +718,8 @@ module altera_merlin_traffic_limiter
    endgenerate
 
    assign suppress = suppress_change_trans_for_one_slave | suppress_change_dest_id | suppress_max_outstanding;
+   assign wide_valid = { VALID_WIDTH {stage2_valid} } & stage2_channel;
+
    always @* begin
       stage2_ready = cmd_src_ready;
       internal_valid = stage2_valid;
@@ -710,37 +727,34 @@ module altera_merlin_traffic_limiter
       // change suppress condidtion, in case REODER it will alllow changing slave
       // even still have pending transactions.
       // -------------------------------------------------------
-       if (suppress) begin
-      //if (suppress_change_dest_id || suppress_max_outstanding || suppress_change_trans_but_not_dest) begin
+      if (suppress) begin
          stage2_ready = 0;
          internal_valid = 0;
       end
 
       if (VALID_WIDTH == 1) begin
          cmd_src_valid = {VALID_WIDTH{1'b0}};
-         cmd_src_valid [0] = internal_valid;
+         cmd_src_valid[0] = internal_valid;
       end else begin
          // -------------------------------------
          // Use the one-hot channel to determine if the destination
          // has changed. This results in a wide valid bus
          // -------------------------------------
-         //cmd_src_valid = { VALID_WIDTH {stage2_valid} } & cmd_sink_channel;
-         // it supposes to use stage2_channel, else PIPELINE switch wrong valid signals
-         cmd_src_valid = { VALID_WIDTH {stage2_valid} } & stage2_channel;
-         if (nonposted_cmd & has_pending_responses ) begin
+         cmd_src_valid = wide_valid;
+         if (nonposted_cmd & has_pending_responses) begin
             if (!REORDER) begin
-               cmd_src_valid = cmd_src_valid & last_channel;
+               cmd_src_valid = wide_valid & last_channel;
                // -------------------------------------
                // Mask the valid signals if the transaction type has changed
                // if hazard prevention is enabled
                // -------------------------------------
                if (PREVENT_HAZARDS == 1)
-                  cmd_src_valid = cmd_src_valid & { VALID_WIDTH {!stage2_trans_changed} };
-            end else begin // else: !if(!REORDER) if REORFER happen
+                  cmd_src_valid = wide_valid & last_channel & { VALID_WIDTH {!stage2_trans_changed} };
+            end else begin // else: !if(!REORDER) if REORDER happen
                if (PREVENT_HAZARDS == 1)
-                  cmd_src_valid = cmd_src_valid & { VALID_WIDTH {!suppress_change_trans_for_one_slave} };
+                  cmd_src_valid = wide_valid & { VALID_WIDTH {!suppress_change_trans_for_one_slave} };
                if (suppress_max_outstanding) begin
-                  cmd_src_valid = cmd_src_valid & {VALID_WIDTH {1'b0} };
+                  cmd_src_valid = {VALID_WIDTH {1'b0}};
                end
 
             end 

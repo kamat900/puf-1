@@ -62,12 +62,18 @@ output virtual_state_uir;
 
 // PHY Instantiation
 `ifdef ALTERA_RESERVED_QIS
+    wire tdi_port;
+    wire [IRWIDTH - 1:0] ir_in_port;
+    always @(tdi_port)
+      tdi = tdi_port;
+    always @(ir_in_port)
+      ir_in = ir_in_port;
     sld_virtual_jtag_basic  sld_virtual_jtag_component (
                 .ir_out (ir_out),
                 .tdo (tdo),
-                .tdi (tdi),
+                .tdi (tdi_port),
                 .tck (tck),
-                .ir_in (ir_in),
+                .ir_in (ir_in_port),
                 .virtual_state_cir (virtual_state_cir),
                 .virtual_state_pdr (virtual_state_pdr),
                 .virtual_state_uir (virtual_state_uir),

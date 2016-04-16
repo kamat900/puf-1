@@ -11,9 +11,22 @@
 // agreement for further details.
 
 
-// $Id: //acds/rel/14.1/ip/merlin/altera_merlin_multiplexer/altera_merlin_multiplexer.sv.terp#1 $
+// (C) 2001-2014 Altera Corporation. All rights reserved.
+// Your use of Altera Corporation's design tools, logic functions and other 
+// software and tools, and its AMPP partner logic functions, and any output 
+// files any of the foregoing (including device programming or simulation 
+// files), and any associated documentation or information are expressly subject 
+// to the terms and conditions of the Altera Program License Subscription 
+// Agreement, Altera MegaCore Function License Agreement, or other applicable 
+// license agreement, including, without limitation, that your use is for the 
+// sole purpose of programming logic devices manufactured by Altera and sold by 
+// Altera or its authorized distributors.  Please refer to the applicable 
+// agreement for further details.
+
+
+// $Id: //acds/rel/15.0/ip/merlin/altera_merlin_multiplexer/altera_merlin_multiplexer.sv.terp#1 $
 // $Revision: #1 $
-// $Date: 2014/10/06 $
+// $Date: 2015/02/08 $
 // $Author: swbranch $
 
 // ------------------------------------------
@@ -82,18 +95,18 @@ module soc_system_mm_interconnect_1_rsp_mux
     // ------------------------------------------
     // Signals
     // ------------------------------------------
-    wire [NUM_INPUTS - 1 : 0] request;
-    wire [NUM_INPUTS - 1 : 0] valid;
-    wire [NUM_INPUTS - 1 : 0] grant;
-    wire [NUM_INPUTS - 1 : 0] next_grant;
-    reg  [NUM_INPUTS - 1 : 0] saved_grant;
-    reg  [PAYLOAD_W - 1 : 0]  src_payload;
-    wire                      last_cycle;
-    reg                       packet_in_progress;
-    reg                       update_grant;
+    wire [NUM_INPUTS - 1 : 0]      request;
+    wire [NUM_INPUTS - 1 : 0]      valid;
+    wire [NUM_INPUTS - 1 : 0]      grant;
+    wire [NUM_INPUTS - 1 : 0]      next_grant;
+    reg [NUM_INPUTS - 1 : 0]       saved_grant;
+    reg [PAYLOAD_W - 1 : 0]        src_payload;
+    wire                           last_cycle;
+    reg                            packet_in_progress;
+    reg                            update_grant;
 
-    wire [PAYLOAD_W - 1 : 0]  sink0_payload;
-    wire [PAYLOAD_W - 1 : 0]  sink1_payload;
+    wire [PAYLOAD_W - 1 : 0] sink0_payload;
+    wire [PAYLOAD_W - 1 : 0] sink1_payload;
 
     assign valid[0] = sink0_valid;
     assign valid[1] = sink1_valid;
@@ -117,15 +130,15 @@ module soc_system_mm_interconnect_1_rsp_mux
     // when this is the endofpacket.
     // ------------------------------------------
     always @(posedge clk or posedge reset) begin
-        if (reset) begin
-            packet_in_progress <= 1'b0;
-        end
-        else begin
-            if (last_cycle)
-                packet_in_progress <= 1'b0;   
-            else if (src_valid)
-                packet_in_progress <= 1'b1;
-        end
+      if (reset) begin
+        packet_in_progress <= 1'b0;
+      end
+      else begin
+        if (last_cycle)
+          packet_in_progress <= 1'b0; 
+        else if (src_valid)
+          packet_in_progress <= 1'b1;
+      end
     end
 
 
@@ -140,17 +153,17 @@ module soc_system_mm_interconnect_1_rsp_mux
     // Input  |  arb shares  |  counter load value
     // 0      |      1       |  0
     // 1      |      1       |  0
-    wire [SHARE_COUNTER_W - 1 : 0] share_0 = 1'd0;
-    wire [SHARE_COUNTER_W - 1 : 0] share_1 = 1'd0;
+     wire [SHARE_COUNTER_W - 1 : 0] share_0 = 1'd0;
+     wire [SHARE_COUNTER_W - 1 : 0] share_1 = 1'd0;
 
     // ------------------------------------------
     // Choose the share value corresponding to the grant.
     // ------------------------------------------
     reg [SHARE_COUNTER_W - 1 : 0] next_grant_share;
     always @* begin
-        next_grant_share =
-            share_0 & { SHARE_COUNTER_W {next_grant[0]} } |
-            share_1 & { SHARE_COUNTER_W {next_grant[1]} };
+      next_grant_share =
+    share_0 & { SHARE_COUNTER_W {next_grant[0]} } |
+    share_1 & { SHARE_COUNTER_W {next_grant[1]} };
     end
 
     // ------------------------------------------
@@ -160,17 +173,17 @@ module soc_system_mm_interconnect_1_rsp_mux
     reg first_packet_r;
     wire first_packet = grant_changed | first_packet_r;
     always @(posedge clk or posedge reset) begin
-        if (reset) begin
-            first_packet_r <= 1'b0;
-        end
-        else begin 
-            if (update_grant)
-                first_packet_r <= 1'b1;
-            else if (last_cycle)
-                first_packet_r <= 1'b0;
-            else if (grant_changed)
-                first_packet_r <= 1'b1;
-        end
+      if (reset) begin
+        first_packet_r <= 1'b0;
+      end
+      else begin 
+        if (update_grant)
+          first_packet_r <= 1'b1;
+        else if (last_cycle)
+          first_packet_r <= 1'b0;
+        else if (grant_changed)
+          first_packet_r <= 1'b1;
+      end
     end
 
     // ------------------------------------------
@@ -181,29 +194,29 @@ module soc_system_mm_interconnect_1_rsp_mux
     reg share_count_zero_flag;
 
     always @* begin
-        if (first_packet) begin
-            p1_share_count = next_grant_share;
-        end
-        else begin
+      if (first_packet) begin
+        p1_share_count = next_grant_share;
+      end
+      else begin
             // Update the counter, but don't decrement below 0.
-            p1_share_count = share_count_zero_flag ? '0 : share_count - 1'b1;
-        end
-    end
+        p1_share_count = share_count_zero_flag ? '0 : share_count - 1'b1;
+      end
+     end
 
     // ------------------------------------------
     // Update the share counter and share-counter=zero flag.
     // ------------------------------------------
     always @(posedge clk or posedge reset) begin
-        if (reset) begin
-            share_count <= '0;
-            share_count_zero_flag <= 1'b1;
+      if (reset) begin
+        share_count <= '0;
+        share_count_zero_flag <= 1'b1;
+      end
+      else begin
+        if (last_cycle) begin
+          share_count <= p1_share_count;
+          share_count_zero_flag <= (p1_share_count == '0);
         end
-        else begin
-            if (last_cycle) begin
-                share_count <= p1_share_count;
-                share_count_zero_flag <= (p1_share_count == '0);
-            end
-        end
+      end
     end
 
     // ------------------------------------------
@@ -221,8 +234,8 @@ module soc_system_mm_interconnect_1_rsp_mux
     // Concatenate all final_packet signals (wire or reg) into a handy vector.
     // ------------------------------------------
     wire [NUM_INPUTS - 1 : 0] final_packet = {
-        final_packet_1,
-        final_packet_0
+    final_packet_1,
+    final_packet_0
     };
 
     // ------------------------------------------
@@ -235,34 +248,34 @@ module soc_system_mm_interconnect_1_rsp_mux
     // ------------------------------------------
     reg first_cycle;
     always @(posedge clk, posedge reset) begin
-        if (reset)
-            first_cycle <= 0;
-        else
-            first_cycle <= last_cycle && ~p1_done;
+      if (reset)
+        first_cycle <= 0;
+      else
+        first_cycle <= last_cycle && ~p1_done;
     end
 
 
     always @* begin
-        update_grant = 0;
+      update_grant = 0;
 
         // ------------------------------------------
         // No arbitration pipeline, update grant whenever
         // the current arb winner has consumed all shares,
         // or all requests are low
         // ------------------------------------------
-        update_grant = (last_cycle && p1_done) || (first_cycle && ~(|valid));
-        update_grant = last_cycle;
+  update_grant = (last_cycle && p1_done) || (first_cycle && ~(|valid));
+  update_grant = last_cycle;
     end
 
     wire save_grant;
     assign save_grant = 1;
-    assign grant      = next_grant;
+    assign grant = next_grant;
 
     always @(posedge clk, posedge reset) begin
-        if (reset)
-            saved_grant <= '0;
-        else if (save_grant)
-            saved_grant <= next_grant;
+      if (reset)
+        saved_grant <= '0;
+      else if (save_grant)
+        saved_grant <= next_grant;
     end
 
     // ------------------------------------------
@@ -280,21 +293,24 @@ module soc_system_mm_interconnect_1_rsp_mux
     // ------------------------------------------
     assign request = valid;
 
-
+    wire [NUM_INPUTS - 1 : 0] next_grant_from_arb;
+                               
     altera_merlin_arbitrator
     #(
-        .NUM_REQUESTERS(NUM_INPUTS),
-        .SCHEME        ("no-arb"),
-        .PIPELINE      (0)
+    .NUM_REQUESTERS(NUM_INPUTS),
+    .SCHEME ("no-arb"),
+    .PIPELINE (0)
     ) arb (
-        .clk                    (clk),
-        .reset                  (reset),
-        .request                (request),
-        .grant                  (next_grant),
-        .save_top_priority      (src_valid),
-        .increment_top_priority (update_grant)
+    .clk (clk),
+    .reset (reset),
+    .request (request),
+    .grant (next_grant_from_arb),
+    .save_top_priority (src_valid),
+    .increment_top_priority (update_grant)
     );
 
+   assign next_grant = next_grant_from_arb;
+                         
     // ------------------------------------------
     // ------------------------------------------
     // Mux
@@ -309,9 +325,9 @@ module soc_system_mm_interconnect_1_rsp_mux
     assign src_valid = |(grant & valid);
 
     always @* begin
-        src_payload =
-            sink0_payload & {PAYLOAD_W {grant[0]} } |
-            sink1_payload & {PAYLOAD_W {grant[1]} };
+      src_payload =
+      sink0_payload & {PAYLOAD_W {grant[0]} } |
+      sink1_payload & {PAYLOAD_W {grant[1]} };
     end
 
     // ------------------------------------------
@@ -319,9 +335,9 @@ module soc_system_mm_interconnect_1_rsp_mux
     // ------------------------------------------
 
     assign sink0_payload = {sink0_channel,sink0_data,
-        sink0_startofpacket,sink0_endofpacket};
+    sink0_startofpacket,sink0_endofpacket};
     assign sink1_payload = {sink1_channel,sink1_data,
-        sink1_startofpacket,sink1_endofpacket};
+    sink1_startofpacket,sink1_endofpacket};
 
     assign {src_channel,src_data,src_startofpacket,src_endofpacket} = src_payload;
 endmodule

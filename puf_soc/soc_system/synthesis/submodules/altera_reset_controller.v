@@ -24,9 +24,9 @@
 // agreement for further details.
 
 
-// $Id: //acds/rel/14.1/ip/merlin/altera_reset_controller/altera_reset_controller.v#1 $
+// $Id: //acds/rel/15.0/ip/merlin/altera_reset_controller/altera_reset_controller.v#1 $
 // $Revision: #1 $
-// $Date: 2014/10/06 $
+// $Date: 2015/02/08 $
 // $Author: swbranch $
 
 // --------------------------------------

@@ -11,9 +11,22 @@
 // agreement for further details.
 
 
-// $Id: //acds/rel/14.1/ip/merlin/altera_merlin_multiplexer/altera_merlin_multiplexer.sv.terp#1 $
+// (C) 2001-2014 Altera Corporation. All rights reserved.
+// Your use of Altera Corporation's design tools, logic functions and other 
+// software and tools, and its AMPP partner logic functions, and any output 
+// files any of the foregoing (including device programming or simulation 
+// files), and any associated documentation or information are expressly subject 
+// to the terms and conditions of the Altera Program License Subscription 
+// Agreement, Altera MegaCore Function License Agreement, or other applicable 
+// license agreement, including, without limitation, that your use is for the 
+// sole purpose of programming logic devices manufactured by Altera and sold by 
+// Altera or its authorized distributors.  Please refer to the applicable 
+// agreement for further details.
+
+
+// $Id: //acds/rel/15.0/ip/merlin/altera_merlin_multiplexer/altera_merlin_multiplexer.sv.terp#1 $
 // $Revision: #1 $
-// $Date: 2014/10/06 $
+// $Date: 2015/02/08 $
 // $Author: swbranch $
 
 // ------------------------------------------
@@ -89,28 +102,28 @@ module soc_system_mm_interconnect_0_cmd_mux_001
     // ------------------------------------------
     // Signals
     // ------------------------------------------
-    wire [NUM_INPUTS - 1 : 0] request;
-    wire [NUM_INPUTS - 1 : 0] valid;
-    wire [NUM_INPUTS - 1 : 0] grant;
-    wire [NUM_INPUTS - 1 : 0] next_grant;
-    reg  [NUM_INPUTS - 1 : 0] saved_grant;
-    reg  [PAYLOAD_W - 1 : 0]  src_payload;
-    wire                      last_cycle;
-    reg                       packet_in_progress;
-    reg                       update_grant;
+    wire [NUM_INPUTS - 1 : 0]      request;
+    wire [NUM_INPUTS - 1 : 0]      valid;
+    wire [NUM_INPUTS - 1 : 0]      grant;
+    wire [NUM_INPUTS - 1 : 0]      next_grant;
+    reg [NUM_INPUTS - 1 : 0]       saved_grant;
+    reg [PAYLOAD_W - 1 : 0]        src_payload;
+    wire                           last_cycle;
+    reg                            packet_in_progress;
+    reg                            update_grant;
 
-    wire [PAYLOAD_W - 1 : 0]  sink0_payload;
-    wire [PAYLOAD_W - 1 : 0]  sink1_payload;
-    wire [PAYLOAD_W - 1 : 0]  sink2_payload;
+    wire [PAYLOAD_W - 1 : 0] sink0_payload;
+    wire [PAYLOAD_W - 1 : 0] sink1_payload;
+    wire [PAYLOAD_W - 1 : 0] sink2_payload;
 
     assign valid[0] = sink0_valid;
     assign valid[1] = sink1_valid;
     assign valid[2] = sink2_valid;
 
-   wire [NUM_INPUTS - 1 : 0] eop;
-      assign eop[0]   = sink0_endofpacket;
-      assign eop[1]   = sink1_endofpacket;
-      assign eop[2]   = sink2_endofpacket;
+    wire [NUM_INPUTS - 1 : 0] eop;
+    assign eop[0] = sink0_endofpacket;
+    assign eop[1] = sink1_endofpacket;
+    assign eop[2] = sink2_endofpacket;
 
     // ------------------------------------------
     // ------------------------------------------
@@ -140,15 +153,15 @@ module soc_system_mm_interconnect_0_cmd_mux_001
     // when this is the endofpacket.
     // ------------------------------------------
     always @(posedge clk or posedge reset) begin
-        if (reset) begin
-            packet_in_progress <= 1'b0;
-        end
-        else begin
-            if (last_cycle)
-                packet_in_progress <= 1'b0;   
-            else if (src_valid)
-                packet_in_progress <= 1'b1;
-        end
+      if (reset) begin
+        packet_in_progress <= 1'b0;
+      end
+      else begin
+        if (last_cycle)
+          packet_in_progress <= 1'b0; 
+        else if (src_valid)
+          packet_in_progress <= 1'b1;
+      end
     end
 
 
@@ -164,19 +177,19 @@ module soc_system_mm_interconnect_0_cmd_mux_001
     // 0      |      1       |  0
     // 1      |      1       |  0
     // 2      |      1       |  0
-    wire [SHARE_COUNTER_W - 1 : 0] share_0 = 1'd0;
-    wire [SHARE_COUNTER_W - 1 : 0] share_1 = 1'd0;
-    wire [SHARE_COUNTER_W - 1 : 0] share_2 = 1'd0;
+     wire [SHARE_COUNTER_W - 1 : 0] share_0 = 1'd0;
+     wire [SHARE_COUNTER_W - 1 : 0] share_1 = 1'd0;
+     wire [SHARE_COUNTER_W - 1 : 0] share_2 = 1'd0;
 
     // ------------------------------------------
     // Choose the share value corresponding to the grant.
     // ------------------------------------------
     reg [SHARE_COUNTER_W - 1 : 0] next_grant_share;
     always @* begin
-        next_grant_share =
-            share_0 & { SHARE_COUNTER_W {next_grant[0]} } |
-            share_1 & { SHARE_COUNTER_W {next_grant[1]} } |
-            share_2 & { SHARE_COUNTER_W {next_grant[2]} };
+      next_grant_share =
+    share_0 & { SHARE_COUNTER_W {next_grant[0]} } |
+    share_1 & { SHARE_COUNTER_W {next_grant[1]} } |
+    share_2 & { SHARE_COUNTER_W {next_grant[2]} };
     end
 
     // ------------------------------------------
@@ -192,32 +205,32 @@ module soc_system_mm_interconnect_0_cmd_mux_001
 
     always @* begin
         // Update the counter, but don't decrement below 0.
-        p1_share_count = share_count_zero_flag ? '0 : share_count - 1'b1;
-    end
+      p1_share_count = share_count_zero_flag ? '0 : share_count - 1'b1;
+     end
 
     // ------------------------------------------
     // Update the share counter and share-counter=zero flag.
     // ------------------------------------------
     always @(posedge clk or posedge reset) begin
-        if (reset) begin
-            share_count <= '0;
-            share_count_zero_flag <= 1'b1;
+      if (reset) begin
+        share_count <= '0;
+        share_count_zero_flag <= 1'b1;
+      end
+      else begin
+        if (update_grant) begin
+          share_count <= next_grant_share;
+          share_count_zero_flag <= (next_grant_share == '0);
         end
-        else begin
-            if (update_grant) begin
-                share_count <= next_grant_share;
-                share_count_zero_flag <= (next_grant_share == '0);
-            end
-            else if (last_cycle) begin
-                share_count <= p1_share_count;
-                share_count_zero_flag <= (p1_share_count == '0);
-            end
+        else if (last_cycle) begin
+          share_count <= p1_share_count;
+          share_count_zero_flag <= (p1_share_count == '0);
         end
+      end
     end
 
 
     always @* begin
-        update_grant = 0;
+      update_grant = 0;
 
         // ------------------------------------------
         // The pipeline delays grant by one cycle, so
@@ -230,21 +243,21 @@ module soc_system_mm_interconnect_0_cmd_mux_001
         //     grant cycle.
         //   benefit: save a small amount of logic.
         // ------------------------------------------
-        if (!packet_in_progress & !src_valid)
-            update_grant = 1;
-        if (last_cycle && share_count_zero_flag)
-            update_grant = 1;
+    if (!packet_in_progress & !src_valid)
+      update_grant = 1;
+    if (last_cycle && share_count_zero_flag)
+      update_grant = 1;
     end
 
     wire save_grant;
     assign save_grant = update_grant;
-    assign grant      = saved_grant;
+    assign grant = saved_grant;
 
     always @(posedge clk, posedge reset) begin
-        if (reset)
-            saved_grant <= '0;
-        else if (save_grant)
-            saved_grant <= next_grant;
+      if (reset)
+        saved_grant <= '0;
+      else if (save_grant)
+        saved_grant <= next_grant;
     end
 
     // ------------------------------------------
@@ -260,32 +273,35 @@ module soc_system_mm_interconnect_0_cmd_mux_001
     // The pipelined arbitration scheme does not require
     // request to be held high during the packet.
     // ------------------------------------------
-    reg  [NUM_INPUTS - 1 : 0] prev_request;
+    reg [NUM_INPUTS - 1 : 0] prev_request;
     always @(posedge clk, posedge reset) begin
-        if (reset)
-            prev_request <= '0;
-        else
-            prev_request <= request & ~(valid & eop);
+      if (reset)
+        prev_request <= '0;
+      else
+        prev_request <= request & ~(valid & eop);
     end
 
     assign request = (PIPELINE_ARB == 1) ? valid | locked :
-                                           prev_request | valid | locked;
+    prev_request | valid | locked;
 
-
+    wire [NUM_INPUTS - 1 : 0] next_grant_from_arb;
+                               
     altera_merlin_arbitrator
     #(
-        .NUM_REQUESTERS(NUM_INPUTS),
-        .SCHEME        ("round-robin"),
-        .PIPELINE      (1)
+    .NUM_REQUESTERS(NUM_INPUTS),
+    .SCHEME ("round-robin"),
+    .PIPELINE (1)
     ) arb (
-        .clk                    (clk),
-        .reset                  (reset),
-        .request                (request),
-        .grant                  (next_grant),
-        .save_top_priority      (src_valid),
-        .increment_top_priority (update_grant)
+    .clk (clk),
+    .reset (reset),
+    .request (request),
+    .grant (next_grant_from_arb),
+    .save_top_priority (src_valid),
+    .increment_top_priority (update_grant)
     );
 
+   assign next_grant = next_grant_from_arb;
+                         
     // ------------------------------------------
     // ------------------------------------------
     // Mux
@@ -301,10 +317,10 @@ module soc_system_mm_interconnect_0_cmd_mux_001
     assign src_valid = |(grant & valid);
 
     always @* begin
-        src_payload =
-            sink0_payload & {PAYLOAD_W {grant[0]} } |
-            sink1_payload & {PAYLOAD_W {grant[1]} } |
-            sink2_payload & {PAYLOAD_W {grant[2]} };
+      src_payload =
+      sink0_payload & {PAYLOAD_W {grant[0]} } |
+      sink1_payload & {PAYLOAD_W {grant[1]} } |
+      sink2_payload & {PAYLOAD_W {grant[2]} };
     end
 
     // ------------------------------------------
@@ -312,11 +328,11 @@ module soc_system_mm_interconnect_0_cmd_mux_001
     // ------------------------------------------
 
     assign sink0_payload = {sink0_channel,sink0_data,
-        sink0_startofpacket,sink0_endofpacket};
+    sink0_startofpacket,sink0_endofpacket};
     assign sink1_payload = {sink1_channel,sink1_data,
-        sink1_startofpacket,sink1_endofpacket};
+    sink1_startofpacket,sink1_endofpacket};
     assign sink2_payload = {sink2_channel,sink2_data,
-        sink2_startofpacket,sink2_endofpacket};
+    sink2_startofpacket,sink2_endofpacket};
 
     assign {src_channel,src_data,src_startofpacket,src_endofpacket} = src_payload;
 endmodule

@@ -24,9 +24,9 @@
 // agreement for further details.
 
 
-// $Id: //acds/rel/14.1/ip/merlin/altera_merlin_slave_agent/altera_merlin_slave_agent.sv#1 $
+// $Id: //acds/rel/15.0/ip/merlin/altera_merlin_slave_agent/altera_merlin_slave_agent.sv#1 $
 // $Revision: #1 $
-// $Date: 2014/10/06 $
+// $Date: 2015/02/08 $
 // $Author: swbranch $
 
 `timescale 1 ns / 1 ns
@@ -83,7 +83,10 @@ module altera_merlin_slave_agent
    parameter BURST_SIZE_W = 3,
 
    // Derived FIFO width
-   parameter FIFO_DATA_W = ST_DATA_W + 1
+   parameter FIFO_DATA_W = ST_DATA_W + 1,
+   
+   // ECC parameter
+   parameter ECC_ENABLE = 0
 ) (
    input                         clk,
    input                         reset,
@@ -101,7 +104,6 @@ module altera_merlin_slave_agent
    output                        m0_debugaccess,
    output                        m0_lock,
    input [1:0]                   m0_response,
-   // output                        m0_writeresponserequest,
    input                         m0_writeresponsevalid,
 
    // Avalon-ST FIFO interfaces.
@@ -132,6 +134,7 @@ module altera_merlin_slave_agent
    input [AVS_DATA_W+1:0]        rdata_fifo_sink_data,
    input                         rdata_fifo_sink_valid,
    output                        rdata_fifo_sink_ready,
+   input                         rdata_fifo_sink_error,
 
    // Av-st sink command packet interface
    output                        cp_ready,
@@ -354,8 +357,6 @@ module altera_merlin_slave_agent
    assign m0_write = ready_for_command & local_write & !suppress_write;
    assign m0_lock  = ready_for_command & local_lock & (m0_read | m0_write);
    assign m0_debugaccess  = cmd_debugaccess;
-   // For now, to support write response 
-   // assign m0_writeresponserequest  = ready_for_command & local_write & !suppress_write & !cmd_posted;
 
    // -------------------------------------------------------------------
    // Indirection layer for response packet values.  Some may always wire
@@ -364,13 +365,12 @@ module altera_merlin_slave_agent
    // What to put in resp_data when a write occured? Answer: it does not
    // matter, because only response status is needed for non-posted writes,
    // and the packet already has a field for that.
-
-   // tgngo:Use the rdata_fifo to store write response as well
-   // So that we wont lost response if master can back-pressured
-   // as well as it needs for write response merging
+   //
+   // We use the rdata_fifo to store write responses as well. This allows us
+   // to handle backpressure on the response path, and allows write response
+   // merging.
    assign rdata_fifo_src_valid = m0_readdatavalid | m0_writeresponsevalid;
-   //assign rdata_fifo_src_valid = m0_readdatavalid;
-   assign rdata_fifo_src_data  = {m0_response,m0_readdata};
+   assign rdata_fifo_src_data  = {m0_response, m0_readdata};
 
    // ------------------------------------------------------------------
    // Generate a token when read commands are suppressed. The token
@@ -381,27 +381,36 @@ module altera_merlin_slave_agent
    // Note: this token is not generated for suppressed uncompressed read cycles;
    // the burst uncompression logic at the read side of the response FIFO
    // generates the correct number of responses.
+   //
+   // When the slave can return the response, let it do its job. Don't 
+   // synthesize a response in that case, unless we've suppressed the
+   // the last transfer in a write sub-burst.
    // ------------------------------------------------------------------
-   // When the slave can return the response, let it does its works. Dont generate sysnthesis response
-   assign needs_response_synthesis = ((local_read | local_compressed_read) & suppress_read) | (nonposted_write_endofpacket && !USE_WRITERESPONSE);
+   wire write_end_of_subburst;
+   assign needs_response_synthesis = ((local_read | local_compressed_read) & suppress_read) || 
+                                        (!USE_WRITERESPONSE && nonposted_write_endofpacket) ||
+                                        (USE_WRITERESPONSE && write_end_of_subburst && suppress_write);
 
-   // Avalon-ST interfaces to external response fifo:
-   // tgngo:Currently, with "generate response synthesis", only one write command is allowed to write in at eop of non-posted write
-   // To support response from slave, we need to store each sub-burst of write command into fifo.
-   // Each sub-burst will return a response and these two command and response are popped out together
-   // Resposne merging will happen and at end_of_packet of the command - the last sub-burst write
-   // the slave agent will send out the final merged response
+   // Avalon-ST interfaces to external response FIFO.
+   //
+   // For efficiency, when synthesizing a write response we only store a non-posted write 
+   // transaction at its endofpacket, even if it was split into multiple sub-bursts.
+   //
+   // When not synthesizing write responses, we store each sub-burst in the FIFO.
+   // Each sub-burst to the slave will return a response, which corresponds to one 
+   // entry in the FIFO. We merge all the sub-burst responses on the final
+   // sub-burst and send it on the response channel.
 
    wire internal_cp_endofburst;
    wire [31:0] minimum_bytecount_wire = PKT_SYMBOLS; // to solve qis warning
    wire [AVS_BURSTCOUNT_W-1:0] minimum_bytecount;
+
    assign minimum_bytecount = minimum_bytecount_wire[AVS_BURSTCOUNT_W-1:0];
    assign internal_cp_endofburst = (cmd_byte_cnt == minimum_bytecount);
-   wire local_nonposted_write = ~cp_data[PKT_TRANS_POSTED] & local_write;
-   wire nonposted_end_of_subburst = local_nonposted_write & internal_cp_endofburst;
+   assign write_end_of_subburst = local_write & internal_cp_endofburst;
 
-   assign rf_source_valid = (local_read | local_compressed_read | (nonposted_write_endofpacket && !USE_WRITERESPONSE) | (USE_WRITERESPONSE && nonposted_end_of_subburst))
-   & ready_for_command & cp_ready;
+   assign rf_source_valid = (local_read | local_compressed_read | (nonposted_write_endofpacket && !USE_WRITERESPONSE) | (USE_WRITERESPONSE && internal_cp_endofburst && local_write))
+                             & ready_for_command & cp_ready;
    assign rf_source_startofpacket = cp_startofpacket;
    assign rf_source_endofpacket   = cp_endofpacket;
    always @* begin
@@ -413,7 +422,6 @@ module altera_merlin_slave_agent
       rf_source_data[PKT_DATA_H   :PKT_DATA_L]           = {DATA_W {1'b0}};
       rf_source_data[PKT_BYTEEN_H :PKT_BYTEEN_L]         = cmd_byteen;
       rf_source_data[PKT_ADDR_H   :PKT_ADDR_L]           = cmd_addr;
-      //rf_source_data[PKT_ADDR_H   :PKT_ADDR_L]           = m0_address;
       rf_source_data[PKT_TRANS_COMPRESSED_READ]          = cmd_compressed;
       rf_source_data[PKT_TRANS_POSTED]                   = cmd_posted;
       rf_source_data[PKT_TRANS_WRITE]                    = cmd_write;
@@ -428,31 +436,32 @@ module altera_merlin_slave_agent
    end
 
    wire uncompressor_source_valid;
-   wire [BURSTSIZE_W-1:0]     uncompressor_burstsize;
+   wire [BURSTSIZE_W-1:0] uncompressor_burstsize;
+   wire last_write_response;
 
-   //assign rp_valid = rdata_fifo_sink_valid | uncompressor_source_valid;
-   // tgngo: last_write_response indicates the last response of the burst (incase need sub-burst)
-   // at this time, the final response merged will send out, and rp_valid is only asserted
-   // for one response for whole burst
+   // last_write_response indicates the last response of the broken-up write burst (sub-bursts).
+   // At this time, the final merged response is sent, and rp_valid is only asserted
+   // once for the whole burst.
    generate
       if (USE_WRITERESPONSE) begin
-         wire last_write_response = rf_sink_data[PKT_TRANS_WRITE] & !rf_sink_data[PKT_TRANS_POSTED] & rf_sink_endofpacket;
+         assign last_write_response = rf_sink_data[PKT_TRANS_WRITE] & rf_sink_endofpacket;
          always @* begin
-         if (rf_sink_data[PKT_TRANS_WRITE] == 1) 
-            rp_valid = rdata_fifo_sink_valid & last_write_response;    
-         else
-            rp_valid = rdata_fifo_sink_valid | uncompressor_source_valid;
+            if (rf_sink_data[PKT_TRANS_WRITE] == 1) 
+               rp_valid = (rdata_fifo_sink_valid | generate_response) & last_write_response & !rf_sink_data[PKT_TRANS_POSTED];
+            else
+               rp_valid = rdata_fifo_sink_valid | uncompressor_source_valid;
          end
       end else begin
-            always @* begin
-               rp_valid = rdata_fifo_sink_valid | uncompressor_source_valid;
-            end
+         assign last_write_response = 1'b0;
+         always @* begin
+            rp_valid = rdata_fifo_sink_valid | uncompressor_source_valid;
+         end
       end
    endgenerate
+
    // ------------------------------------------------------------------
    // Response merging
    // ------------------------------------------------------------------
-
    reg [1:0] current_response;
    reg [1:0] response_merged;
    generate
@@ -467,7 +476,7 @@ module altera_merlin_slave_agent
               first_write_response  <= 1'b1;
            end 
            else begin // Merging work for write response, for read: previous_response_in = current_response
-              if (rf_sink_valid & rdata_fifo_sink_valid & rf_sink_data[PKT_TRANS_WRITE]) begin
+              if (rf_sink_valid & (rdata_fifo_sink_valid | generate_response) & rf_sink_data[PKT_TRANS_WRITE]) begin
                  first_write_response <= 1'b0;
                  if (rf_sink_endofpacket)
                     first_write_response <= 1'b1;
@@ -476,8 +485,8 @@ module altera_merlin_slave_agent
         end
 
         always_comb begin
-           current_response = rdata_fifo_sink_data[AVS_DATA_W+1:AVS_DATA_W];
-           reset_merged_output = first_write_response && rdata_fifo_sink_valid;
+           current_response = generate_response ? 2'b00 : rdata_fifo_sink_data[AVS_DATA_W+1:AVS_DATA_W] | {2{rdata_fifo_sink_error}};
+           reset_merged_output = first_write_response && (rdata_fifo_sink_valid || generate_response);
            previous_response_in = reset_merged_output ? current_response : previous_response;
            response_merged = current_response >= previous_response ? current_response: previous_response_in;
         end
@@ -487,14 +496,15 @@ module altera_merlin_slave_agent
               previous_response <= 2'b00;
            end
            else begin
-              if (rf_sink_valid & rdata_fifo_sink_valid) begin
+              if (rf_sink_valid & (rdata_fifo_sink_valid || generate_response)) begin
                  previous_response <= response_merged;
               end
            end
         end
      end else begin : response_merging_read_only
         always @* begin
-           current_response = generate_response ? 2'b00: rdata_fifo_sink_data[AVS_DATA_W+1:AVS_DATA_W];
+           current_response = generate_response ? 2'b00: rdata_fifo_sink_data[AVS_DATA_W+1:AVS_DATA_W] | 
+                                                         {2{rdata_fifo_sink_error}};
            response_merged = current_response;
         end
      end
@@ -514,13 +524,26 @@ module altera_merlin_slave_agent
    wire [BURSTWRAP_W-1:0]  rp_burstwrap;
    wire [ADDR_W-1:0]       rp_address;
    wire                    rp_is_compressed;
+   wire                    ready_for_response;
+
+   // ------------------------------------------------------------------
+   // We're typically ready for a response if the network is ready. There
+   // is one exception:
+   //
+   // If the slave issues write responses, we only issue a merged response on 
+   // the final sub-burst. As a result, we only care about response channel 
+   // availability on the final burst when we send out the merged response.
+   // ------------------------------------------------------------------
+   assign ready_for_response = (USE_WRITERESPONSE) ? 
+                            rp_ready || (rf_sink_data[PKT_TRANS_WRITE] && !last_write_response) || rf_sink_data[PKT_TRANS_POSTED]: 
+                            rp_ready;
 
    // ------------------------------------------------------------------
    // Backpressure the readdata fifo if we're supposed to synthesize a response.
    // This may be a read response (for suppressed reads) or a write response
    // (for non-posted writes).
    // ------------------------------------------------------------------
-   assign rdata_fifo_sink_ready = rdata_fifo_sink_valid & rp_ready & ~(rf_sink_valid & generate_response);
+   assign rdata_fifo_sink_ready = rdata_fifo_sink_valid & ready_for_response & ~(rf_sink_valid & generate_response);
 
    always @* begin
       // By default, return all fields...
@@ -543,11 +566,9 @@ module altera_merlin_slave_agent
       rp_data[PKT_TRANS_READ]                               = rf_sink_data[PKT_TRANS_READ] | rf_sink_data[PKT_TRANS_COMPRESSED_READ];
       rp_data[PKT_TRANS_COMPRESSED_READ]                    = rp_is_compressed;
 
-      // avalon slaves always respond with "okay" -> not true for now
-      //rp_data[PKT_RESPONSE_STATUS_H:PKT_RESPONSE_STATUS_L]  = {RESPONSE_W{ 1'b0 }};
       rp_data[PKT_RESPONSE_STATUS_H:PKT_RESPONSE_STATUS_L]  = response_merged;
       rp_data[PKT_BURST_SIZE_H:PKT_BURST_SIZE_L]            = uncompressor_burstsize;
-      // bounce the original size back to the master untouch
+      // bounce the original size back to the master untouched
       rp_data[PKT_ORI_BURST_SIZE_H:PKT_ORI_BURST_SIZE_L]    = rf_sink_data[PKT_ORI_BURST_SIZE_H:PKT_ORI_BURST_SIZE_L];
    end
 
@@ -578,7 +599,7 @@ module altera_merlin_slave_agent
       .source_startofpacket (rp_startofpacket),
       .source_endofpacket   (rp_endofpacket),
       .source_valid         (uncompressor_source_valid),
-      .source_ready         (rp_ready),
+      .source_ready         (ready_for_response),
       .source_addr          (rp_address),
       .source_burstwrap     (rp_burstwrap),
       .source_byte_cnt      (burst_byte_cnt),
@@ -587,7 +608,7 @@ module altera_merlin_slave_agent
    );
 
    //--------------------------------------
-   // Assertion: In case slave support response. Yhe slave needs return response in order
+   // Assertion: In case slave support response. The slave needs return response in order
    // Ex: non-posted write followed by a read: write response must complete before read data 
    //--------------------------------------
    // synthesis translate_off      

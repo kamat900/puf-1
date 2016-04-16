@@ -60,7 +60,7 @@
  ******************************************************************************
  ******************************************************************************/
 
-
+#ifndef ARMCOMPILER
 #if ARRIAV
 // Temporary workaround to place the initial stack pointer at a safe offset from end
 #define STRINGIFY(s)		STRINGIFY_STR(s)
@@ -75,6 +75,7 @@ asm("__alt_stack_pointer = " STRINGIFY(STACK_POINTER));
 #define STRINGIFY_STR(s)	#s
 asm(".global __alt_stack_pointer");
 asm("__alt_stack_pointer = " STRINGIFY(STACK_POINTER));
+#endif
 #endif
 
 #if ENABLE_PRINTF_LOG
@@ -891,6 +892,15 @@ void set_rank_and_odt_mask(alt_u32 rank, alt_u32 odt_mode)
 		odt_mask_0 = 0x0;
 		odt_mask_1 = 0x0;
 	}
+
+#if ADVANCED_ODT_CONTROL
+	// odt_mask_0 = read
+	// odt_mask_1 = write
+	odt_mask_0  = (CFG_READ_ODT_CHIP  >> (RW_MGR_MEM_ODT_WIDTH * rank));
+	odt_mask_1  = (CFG_WRITE_ODT_CHIP >> (RW_MGR_MEM_ODT_WIDTH * rank));
+	odt_mask_0 &= ((1 << RW_MGR_MEM_ODT_WIDTH) - 1);
+	odt_mask_1 &= ((1 << RW_MGR_MEM_ODT_WIDTH) - 1);
+#endif
 
 #if MRS_MIRROR_PING_PONG_ATSO
 	// See set_cs_and_odt_mask_for_ping_pong_atso
@@ -2269,7 +2279,7 @@ void rw_mgr_rdimm_initialize(void) { }
 
 #if DDR3
 
-#if LRDIMM
+#if (ADVANCED_ODT_CONTROL || LRDIMM)
 alt_u32 ddr3_mirror_mrs_cmd(alt_u32 bit_vector) {
 	// This function performs address mirroring of an AC ROM command, which
 	// requires swapping the following DDR3 bits:
@@ -2325,7 +2335,7 @@ void rtt_change_MRS1_MRS2_NOM_WR (alt_u32 prev_ac_mr , alt_u32 odt_ac_mr, alt_u3
 	}
 	IOWR_32DIRECT(BASE_RW_MGR, ac_rom_entry, new_ac_mr);
 }
-#endif //LRDIMM
+#endif //(ADVANCED_ODT_CONTROL || LRDIMM)
 
 void rw_mgr_mem_initialize (void)
 {
@@ -2431,6 +2441,39 @@ void rw_mgr_mem_initialize (void)
 
 			continue;
 		}
+
+#if ADVANCED_ODT_CONTROL
+		alt_u32 rtt_nom = 0;
+		alt_u32 rtt_wr  = 0;
+		alt_u32 rtt_drv = 0;
+
+		switch (r) {
+			case 0: {
+				rtt_nom = MR1_RTT_RANK0;
+				rtt_wr  = MR2_RTT_WR_RANK0;
+				rtt_drv = MR1_RTT_DRV_RANK0;
+			} break;
+			case 1: {
+				rtt_nom = MR1_RTT_RANK1;
+				rtt_wr  = MR2_RTT_WR_RANK1;
+				rtt_drv = MR1_RTT_DRV_RANK1;
+			} break;
+			case 2: {
+				rtt_nom = MR1_RTT_RANK2;
+				rtt_wr  = MR2_RTT_WR_RANK2;
+				rtt_drv = MR1_RTT_DRV_RANK2;
+			} break;
+			case 3: {
+				rtt_nom = MR1_RTT_RANK3;
+				rtt_wr  = MR2_RTT_WR_RANK3;
+				rtt_drv = MR1_RTT_DRV_RANK3;
+			} break;
+		}
+		rtt_change_MRS1_MRS2_NOM_WR (__RW_MGR_CONTENT_ac_mrs1, (rtt_nom|rtt_drv),
+		                             ((RW_MGR_MEM_ADDRESS_MIRRORING>>r)&0x1), 1);
+		rtt_change_MRS1_MRS2_NOM_WR (__RW_MGR_CONTENT_ac_mrs2, rtt_wr,
+		                             ((RW_MGR_MEM_ADDRESS_MIRRORING>>r)&0x1), 2);
+#endif //ADVANCED_ODT_CONTROL
 
 		//USER set rank 
 #if MRS_MIRROR_PING_PONG_ATSO

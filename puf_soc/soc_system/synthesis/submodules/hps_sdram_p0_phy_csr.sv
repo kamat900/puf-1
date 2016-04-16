@@ -54,7 +54,7 @@ module hps_sdram_p0_phy_csr(
 
 localparam RESET_REQUEST_DELAY = 4;
 
-localparam CSR_IP_VERSION_NUMBER = 141;
+localparam CSR_IP_VERSION_NUMBER = 150;
 
 parameter CSR_ADDR_WIDTH       = 8;
 parameter CSR_DATA_WIDTH       = 32;

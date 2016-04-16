@@ -11,9 +11,9 @@
 // agreement for further details.
 
 
-// $File: //acds/rel/14.1/ip/avalon_st/altera_avalon_st_pipeline_stage/altera_avalon_st_pipeline_base.v $
+// $File: //acds/rel/15.0/ip/avalon_st/altera_avalon_st_pipeline_stage/altera_avalon_st_pipeline_base.v $
 // $Revision: #1 $
-// $Date: 2014/10/06 $
+// $Date: 2015/02/08 $
 // $Author: swbranch $
 //------------------------------------------------------------------------------
 
