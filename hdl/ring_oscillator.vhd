@@ -7,12 +7,12 @@ entity ring_oscillator is
     CHAIN_WIDTH : positive := 50);      -- must be an even number
   port (
     rstn   : in  std_logic;
-    output : out std_logic_vector(0 downto 0));
+    output : out std_logic);
 end entity ring_oscillator;
 
 architecture rtl of ring_oscillator is
   signal chain                : unsigned(CHAIN_WIDTH downto 0);
-  signal output_s             : std_logic_vector(0 downto 0);
+  signal output_s             : std_logic;
   attribute syn_keep          : boolean;
   attribute syn_keep of chain : signal is true;
 begin
@@ -20,12 +20,12 @@ begin
   generate
     chain(i) <= chain(i - 1);
   end generate;
-  chain(0) <= not chain(CHAIN_WIDTH) or (not rst_n);
+  chain(0) <= not chain(CHAIN_WIDTH) or (not rstn);
 
-  U1_PROC_TFF : process (rst_n, chain(0))
+  U1_PROC_TFF : process (rstn, chain(0))
   begin
-    if rst_n = '0' then
-      s_output <= "0";
+    if rstn = '0' then
+      output_s <= '0';
     else
       if rising_edge(chain(0)) then
         output_s <= not output_s;
